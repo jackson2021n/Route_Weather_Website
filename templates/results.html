@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Results</title>
+  </head>
+  <body>
+    <h1>Results</h1>
+
+    <p><b>Start:</b> {{ meta["Start"] }}</p>
+    <p><b>Destination:</b> {{ meta["Destination"] }}</p>
+    <p><b>Depart:</b> {{ meta["Depart (local)"] }}</p>
+    <p><b>Route Distance (miles):</b> {{ meta["Route Distance (miles)"] }}</p>
+    <p><b>Route Duration (hr):</b> {{ meta["Route Duration (hr)"] }}</p>
+
+    <h2>Towns</h2>
+    {{ table_html | safe }}
+
+    <p><a href="/">Run another route</a></p>
+  </body>
+</html>
