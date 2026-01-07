@@ -11,7 +11,7 @@ from timezonefinder import TimezoneFinder
 km_to_miles = 0.621371
 miles_to_km = 1.0 / km_to_miles
 
-USER_AGENT = "route-towns-weather/1.0 (Jackson Negus: jacksonegus2021@gmail.com)"  # set a real contact if you deploy/share
+USER_AGENT = "route-weather-app/1.0 (contact via GitHub)"
 
 # --------- helpers ---------
 def haversine_km(lat1, lon1, lat2, lon2):
