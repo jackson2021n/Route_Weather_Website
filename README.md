@@ -37,3 +37,5 @@ Routes can take time because the app rate limits requests to public APIs.
 
 Free version of Render may take time to "wake up" the site
 
+Stay in the site while it is loading to avoid errors
+
