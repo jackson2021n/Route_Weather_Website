@@ -18,15 +18,8 @@ The app finds towns along the route, estimates ETAs, and pulls hourly forecasts 
 - National Weather Service API (hourly forecasts)
 - Pandas
 
-## Run locally (Windows PowerShell)
-```powershell
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python app.py
-Open:
-http://127.0.0.1:5000
-
 Notes
 
+Ensure location is written excatly how prompted (City, STATE ABBREVIATION IN CAPS) *Don't forget the comma
 Routes can take time because the app rate limits requests to public APIs.
 
