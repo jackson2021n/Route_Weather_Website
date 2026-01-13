@@ -11,6 +11,17 @@ Enter:
 
 The app finds towns along the route, estimates ETAs, and pulls hourly forecasts for each stop.
 
+# How It Works
+user inputs start, destination, departure time
+
+route API returns path and duration
+
+program samples points and estimates ETAs
+
+weather API returns hourly forecasts for each point
+
+app renders a table
+
 ## Tech Stack
 - Python, Flask
 - OSRM (routing)
