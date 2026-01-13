@@ -21,5 +21,6 @@ The app finds towns along the route, estimates ETAs, and pulls hourly forecasts 
 Notes
 
 Ensure location is written excatly how prompted (City, STATE ABBREVIATION IN CAPS) *Don't forget the comma
+
 Routes can take time because the app rate limits requests to public APIs.
 
