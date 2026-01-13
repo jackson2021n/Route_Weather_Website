@@ -35,5 +35,5 @@ Ensure location is written excatly how prompted (City, STATE ABBREVIATION IN CAP
 
 Routes can take time because the app rate limits requests to public APIs.
 
-Free version of render may take time to "wake up" the site
+Free version of Render may take time to "wake up" the site
 
