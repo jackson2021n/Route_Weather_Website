@@ -216,7 +216,7 @@ def build_town_weather_table(start_query, end_query, depart_local_str):
     cumdist_km = route_cumulative_dist_km(coords)
 
     sparse_pts = []
-    SPARSE_KM = 15  # ~25 miles*Changed to 15 km for denser coverage (Change?)
+    SPARSE_KM = 15  # ~25 miles*Changed to 15 km for denser coverage  
 
     dist = 0.0
     next_mark = SPARSE_KM
@@ -261,7 +261,7 @@ def build_town_weather_table(start_query, end_query, depart_local_str):
 
     reverse_cache = {}
 
-    MIN_KM_BETWEEN_REVERSE = 10.0  # start with 3 km; adjust later (Change?)
+    MIN_KM_BETWEEN_REVERSE = 10.0  # start with 3 km; adjust later  
     last_rev_lat = None
     last_rev_lon = None
 
@@ -275,7 +275,7 @@ def build_town_weather_table(start_query, end_query, depart_local_str):
 
         km_from_start = nearest_cumdist_km(lat, lon, coords, cumdist_km)
         # round coordinates to reduce duplicate reverse geocode calls
-        cache_key = (round(lat, 2), round(lon, 2))  # ~1 km, reduces reverse calls a lot (Change?)
+        cache_key = (round(lat, 2), round(lon, 2))  # ~1 km, reduces reverse calls a lot  
 
         if cache_key in reverse_cache:
             town, state = reverse_cache[cache_key]
