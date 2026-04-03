@@ -81,38 +81,6 @@ def osrm_route(start_lat, start_lon, end_lat, end_lon):
     return coords, duration_s, distance_m, steps
 
 
-def sample_route_points(coords_lonlat, every_km=10.0):
-    # returns list of (lat, lon, distance_km_from_start)
-    points = []
-    dist_accum = 0.0
-    next_mark = 0.0
-
-    # seed with start
-    lon0, lat0 = coords_lonlat[0]
-    points.append((lat0, lon0, 0.0))
-
-    for i in range(1, len(coords_lonlat)):
-        lon1, lat1 = coords_lonlat[i - 1]
-        lon2, lat2 = coords_lonlat[i]
-        seg_km = haversine_km(lat1, lon1, lat2, lon2)
-        if seg_km <= 0:
-            continue
-
-        while next_mark + every_km <= dist_accum + seg_km:
-            target = next_mark + every_km
-            frac = (target - dist_accum) / seg_km
-            lat = lat1 + (lat2 - lat1) * frac
-            lon = lon1 + (lon2 - lon1) * frac
-            points.append((lat, lon, target))
-            next_mark = target
-
-        dist_accum += seg_km
-
-    # add end point
-    lonE, latE = coords_lonlat[-1]
-    points.append((latE, lonE, dist_accum))
-    return points
-
 def step_points_from_osrm(steps):
     # Returns list of (lat, lon) points representing maneuver locations
     pts = []
