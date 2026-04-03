@@ -1,0 +1,6 @@
+flask
+requests
+pandas
+openpyxl
+gunicorn
+timezonefinder==6.5.2

@@ -1,0 +1,115 @@
+<p>
+  This web application estimates the weather you will encounter as you drive
+  between two locations. It identifies towns along the route and estimates
+  arrival-time weather using public APIs.
+</p>
+
+<p>
+  Routes may take 30–90 seconds to load due to rate limiting.
+</p>
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Route Weather</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 24px; }
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.55);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      }
+
+      .card {
+        background: white;
+        padding: 20px 24px;
+        border-radius: 12px;
+        width: 360px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      }
+
+      .title { margin: 0 0 10px 0; font-size: 18px; }
+      .sub { margin: 0 0 14px 0; color: #444; font-size: 14px; }
+
+      .bar {
+        width: 100%;
+        height: 10px;
+        background: #eee;
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .bar > div {
+        height: 100%;
+        width: 35%;
+        background: #3b82f6;
+        border-radius: 999px;
+        animation: indeterminate 1.1s infinite ease-in-out;
+      }
+
+      @keyframes indeterminate {
+        0%   { transform: translateX(-120%); }
+        100% { transform: translateX(320%); }
+      }
+
+      .disabled {
+        opacity: 0.7;
+        pointer-events: none;
+      }
+
+      input { width: 360px; padding: 8px; }
+      button { padding: 10px 14px; }
+    </style>
+  </head>
+
+  <body>
+    <h1>Route Weather</h1>
+
+    <p>
+      Enter a start and destination plus a departure time. This may take a bit because the app rate limits requests to public APIs.
+    </p>
+
+    <form id="routeForm" method="post" action="/route">
+      <label>Start</label><br />
+      <input name="start" placeholder="Boise, ID" required /><br /><br />
+
+      <label>Destination</label><br />
+      <input name="dest" placeholder="Spokane, WA" required /><br /><br />
+
+      <label>Departure (YYYY-MM-DD HH:MM)</label><br />
+      <input
+        type="datetime-local"
+        name="depart"
+        required
+      />
+
+
+      <button id="submitBtn" type="submit">Get towns and weather</button>
+    </form>
+
+    <div id="overlay" class="overlay" aria-live="polite" aria-busy="true">
+      <div class="card">
+        <p class="title">Working on your route</p>
+        <p class="sub">Finding towns and fetching forecasts. Please keep this tab open.</p>
+        <div class="bar"><div></div></div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById("routeForm");
+      const overlay = document.getElementById("overlay");
+      const submitBtn = document.getElementById("submitBtn");
+
+      form.addEventListener("submit", () => {
+        overlay.style.display = "flex";
+        submitBtn.classList.add("disabled");
+        submitBtn.textContent = "Loading...";
+      });
+    </script>
+  </body>
+</html>
