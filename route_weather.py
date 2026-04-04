@@ -10,6 +10,9 @@ miles_to_km = 1.0 / km_to_miles
 
 USER_AGENT = "route-towns-weather/1.0 (Jackson Negus: jacksonegus2021@gmail.com)"  # set a real contact if you deploy/share
 
+# Cache NWS grid-point forecast URLs to avoid redundant /points/ lookups
+_nws_grid_cache: dict = {}
+
 # --------- helpers ---------
 def haversine_km(lat1, lon1, lat2, lon2):
     r = 6371.0
@@ -93,17 +96,21 @@ def step_points_from_osrm(steps):
     return pts
 
 def nws_hourly_forecast(lat, lon):
-    # NWS: first get gridpoint endpoint
     headers = {"User-Agent": USER_AGENT, "Accept": "application/geo+json"}
-    p = requests.get(f"https://api.weather.gov/points/{lat},{lon}", headers=headers, timeout=30)
-    p.raise_for_status()
-    props = p.json()["properties"]
-    forecast_hourly_url = props["forecastHourly"]
+    grid_key = (round(lat, 1), round(lon, 1))  # ~11 km cell
 
+    if grid_key not in _nws_grid_cache:
+        p = requests.get(
+            f"https://api.weather.gov/points/{lat},{lon}",
+            headers=headers, timeout=30
+        )
+        p.raise_for_status()
+        _nws_grid_cache[grid_key] = p.json()["properties"]["forecastHourly"]
+
+    forecast_hourly_url = _nws_grid_cache[grid_key]
     f = requests.get(forecast_hourly_url, headers=headers, timeout=30)
     f.raise_for_status()
-    periods = f.json()["properties"]["periods"]
-    return periods  # list with startTime, temperature, shortForecast, etc.
+    return f.json()["properties"]["periods"]
 
 def pick_forecast_for_eta(periods, eta_dt):
     # find hourly period whose startTime is closest to eta_dt
@@ -160,7 +167,7 @@ def build_town_weather_table(start_query, end_query, depart_local_str):
     cumdist_km = route_cumulative_dist_km(coords)
 
     sparse_pts = []
-    SPARSE_KM = 20  # increased from 15 km to reduce point count
+    SPARSE_KM = 25  # increased from 20 km to reduce point count
 
     dist = 0.0
     next_mark = SPARSE_KM
@@ -204,7 +211,7 @@ def build_town_weather_table(start_query, end_query, depart_local_str):
     reverse_cache = {}
     town_coords = {}  # label → (lat, lon) for NWS fetch
 
-    MIN_KM_BETWEEN_REVERSE = 15.0  # increased from 3 km to reduce Nominatim calls
+    MIN_KM_BETWEEN_REVERSE = 20.0  # increased from 15 km to reduce Nominatim calls
     last_rev_lat = None
     last_rev_lon = None
 
@@ -248,11 +255,12 @@ def build_town_weather_table(start_query, end_query, depart_local_str):
             return label, None
 
     fetch_targets = [(label, lat, lon) for label, (lat, lon) in town_coords.items()]
-    with futures.ThreadPoolExecutor(max_workers=8) as pool:
+    with futures.ThreadPoolExecutor(max_workers=5) as pool:
         for label, periods in pool.map(fetch_one, fetch_targets):
             forecast_cache[label] = periods
 
     # --- Pass 3: assemble output rows ---
+    pending_rows.sort(key=lambda r: r[3])   # sort by km_from_start, closest first
     results = []
     seen_labels = set()
 
