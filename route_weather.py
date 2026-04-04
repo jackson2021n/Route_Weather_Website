@@ -3,12 +3,15 @@ import math
 from datetime import datetime, timedelta
 import requests
 import pandas as pd
-from concurrent import futures
+import os
+from zoneinfo import ZoneInfo
+from timezonefinder import TimezoneFinder
+
 
 km_to_miles = 0.621371
 miles_to_km = 1.0 / km_to_miles
 
-USER_AGENT = "route-towns-weather/1.0 (Jackson Negus: jacksonegus2021@gmail.com)"  # set a real contact if you deploy/share
+USER_AGENT = "route-weather-app/1.0 (contact via GitHub)"
 
 # --------- helpers ---------
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -81,6 +84,38 @@ def osrm_route(start_lat, start_lon, end_lat, end_lon):
     return coords, duration_s, distance_m, steps
 
 
+def sample_route_points(coords_lonlat, every_km=10.0):
+    # returns list of (lat, lon, distance_km_from_start)
+    points = []
+    dist_accum = 0.0
+    next_mark = 0.0
+
+    # seed with start
+    lon0, lat0 = coords_lonlat[0]
+    points.append((lat0, lon0, 0.0))
+
+    for i in range(1, len(coords_lonlat)):
+        lon1, lat1 = coords_lonlat[i - 1]
+        lon2, lat2 = coords_lonlat[i]
+        seg_km = haversine_km(lat1, lon1, lat2, lon2)
+        if seg_km <= 0:
+            continue
+
+        while next_mark + every_km <= dist_accum + seg_km:
+            target = next_mark + every_km
+            frac = (target - dist_accum) / seg_km
+            lat = lat1 + (lat2 - lat1) * frac
+            lon = lon1 + (lon2 - lon1) * frac
+            points.append((lat, lon, target))
+            next_mark = target
+
+        dist_accum += seg_km
+
+    # add end point
+    lonE, latE = coords_lonlat[-1]
+    points.append((latE, lonE, dist_accum))
+    return points
+
 def step_points_from_osrm(steps):
     # Returns list of (lat, lon) points representing maneuver locations
     pts = []
@@ -142,12 +177,33 @@ def nearest_cumdist_km(lat, lon, coords_lonlat, cumdist_km):
 
 # --------- main program ---------
 def build_town_weather_table(start_query, end_query, depart_local_str):
+    tf = TimezoneFinder()
+    tz_cache = {}  # (round(lat,1), round(lon,1)) -> tzname
+
+    def tzname_for_point(lat, lon):
+        k = (round(lat, 1), round(lon, 1))
+        if k in tz_cache:
+            return tz_cache[k]
+        tz = tf.timezone_at(lat=lat, lng=lon) or "UTC"
+        tz_cache[k] = tz
+        return tz
 
     # depart_local_str example: "2026-01-05 08:00"
-    depart_local = datetime.strptime(depart_local_str.replace("T", " "), "%Y-%m-%d %H:%M")
+    depart_local_str = depart_local_str.replace("T", " ")
+        # Accept both "YYYY-MM-DD HH:MM" and "YYYY-MM-DDTHH:MM"
+
+    depart_local_naive = datetime.strptime(depart_local_str, "%Y-%m-%d %H:%M")
+
+    # Determine start location timezone and make departure aware
+    # (We can only do this after we know start_lat/start_lon)
+
+
 
     start_lat, start_lon, start_name = nominatim_search(start_query)
     time.sleep(1)
+    start_tz = ZoneInfo(tzname_for_point(start_lat, start_lon))
+    depart_local = depart_local_naive.replace(tzinfo=start_tz)
+
     end_lat, end_lon, end_name = nominatim_search(end_query)
     time.sleep(1)
 
@@ -160,7 +216,7 @@ def build_town_weather_table(start_query, end_query, depart_local_str):
     cumdist_km = route_cumulative_dist_km(coords)
 
     sparse_pts = []
-    SPARSE_KM = 20  # increased from 15 km to reduce point count
+    SPARSE_KM = 15  # ~25 miles*Changed to 15 km for denser coverage  
 
     dist = 0.0
     next_mark = SPARSE_KM
@@ -197,118 +253,109 @@ def build_town_weather_table(start_query, end_query, depart_local_str):
     step_pts = deduped
 
 
-
+    towns_by_label = {}  # key: "Town, State" → best (closest) row
     speed_km_per_s = total_km / duration_s if duration_s > 0 else 0
 
+    # Cache forecasts by town to avoid repeated calls
     forecast_cache = {}
-    reverse_cache = {}
-    town_coords = {}  # label → (lat, lon) for NWS fetch
 
-    MIN_KM_BETWEEN_REVERSE = 15.0  # increased from 3 km to reduce Nominatim calls
+    reverse_cache = {}
+
+    MIN_KM_BETWEEN_REVERSE = 10.0  # start with 3 km; adjust later  
     last_rev_lat = None
     last_rev_lon = None
 
-    # --- Pass 1: reverse geocode all points (sequential, Nominatim rate-limited) ---
-    pending_rows = []  # (label, town, state, km_from_start, eta)
 
     for lat, lon in step_pts:
+         # ---- Step B: distance gate ----
         if last_rev_lat is not None:
             moved_km = haversine_km(last_rev_lat, last_rev_lon, lat, lon)
             if moved_km < MIN_KM_BETWEEN_REVERSE:
                 continue
 
         km_from_start = nearest_cumdist_km(lat, lon, coords, cumdist_km)
-        cache_key = (round(lat, 2), round(lon, 2))  # ~1 km grid
+        # round coordinates to reduce duplicate reverse geocode calls
+        cache_key = (round(lat, 2), round(lon, 2))  # ~1 km, reduces reverse calls a lot  
 
         if cache_key in reverse_cache:
             town, state = reverse_cache[cache_key]
         else:
             town, state = nominatim_reverse(lat, lon)
             reverse_cache[cache_key] = (town, state)
-            time.sleep(1)  # Nominatim ToS: 1 req/sec, only on real calls
+            time.sleep(1)  # only sleep on real Nominatim calls
 
         if town is None:
             continue
 
         last_rev_lat, last_rev_lon = lat, lon
+
+
         label = f"{town}, {state}".strip().strip(",")
+
+        # ETA estimation using average speed (simple first version)
         eta = depart_local + timedelta(seconds=(km_from_start / speed_km_per_s) if speed_km_per_s else 0)
+        # Convert ETA to the town's true local timezone for display
+        town_tz = ZoneInfo(tzname_for_point(lat, lon))
+        eta_local = eta.astimezone(town_tz)
 
-        if label not in town_coords:
-            town_coords[label] = (lat, lon)
+        # Treat ETA as local naive; NWS gives zoned times. For a first version, we will compare as naive UTC offset later.
+        # Easiest practical approach: assume your machine local time aligns; for multi-timezone routes you will refine later.
 
-        pending_rows.append((label, town, state, km_from_start, eta))
-
-    # --- Pass 2: fetch NWS forecasts in parallel ---
-    def fetch_one(item):
-        label, lat, lon = item
-        try:
-            return label, nws_hourly_forecast(lat, lon)
-        except Exception:
-            return label, None
-
-    fetch_targets = [(label, lat, lon) for label, (lat, lon) in town_coords.items()]
-    with futures.ThreadPoolExecutor(max_workers=8) as pool:
-        for label, periods in pool.map(fetch_one, fetch_targets):
-            forecast_cache[label] = periods
-
-    # --- Pass 3: assemble output rows ---
-    results = []
-    seen_labels = set()
-
-    for label, town, state, km_from_start, eta in pending_rows:
-        if label in seen_labels:
-            continue
-        seen_labels.add(label)
-
-        periods = forecast_cache.get(label)
         weather = None
         temp = None
 
+        if label not in forecast_cache:
+            try:
+                periods = nws_hourly_forecast(lat, lon)
+                forecast_cache[label] = periods
+                time.sleep(0.25)
+            except Exception:
+                forecast_cache[label] = None
+
+        periods = forecast_cache.get(label)
         if periods:
+            # Convert eta to an aware datetime by attaching local offset from the first period if possible
             try:
                 first_dt = datetime.fromisoformat(periods[0]["startTime"].replace("Z", "+00:00"))
-                eta_aware = eta.replace(tzinfo=first_dt.tzinfo)
-                pick = pick_forecast_for_eta(periods, eta_aware)
+                eta_for_forecast = eta.astimezone(first_dt.tzinfo)
+                pick = pick_forecast_for_eta(periods, eta_for_forecast)
+
                 if pick:
                     temp = pick.get("temperature")
                     weather = pick.get("shortForecast")
             except Exception:
                 pass
 
-        results.append({
-            "Town": town,
-            "State": state,
-            "Approx Route Miles": round(km_from_start * km_to_miles, 1),
-            "ETA (local machine time)": eta.strftime("%Y-%m-%d %H:%M"),
-            "Temp (F)": temp,
-            "Weather": weather,
-        })
+            miles_from_start = round(km_from_start * km_to_miles, 1)
 
+            row = {
+                "Town": town,
+                "State": state,
+                "Approx Route Miles": miles_from_start,
+                "ETA (local time)": eta_local.strftime("%Y-%m-%d %I:%M %p"),
+
+                "Temp (F)": temp,
+                "Weather": weather,
+            }
+
+            # Keep the closest occurrence of each town
+            if label not in towns_by_label or miles_from_start < towns_by_label[label]["Approx Route Miles"]:
+                towns_by_label[label] = row
+
+    duration_hhmm = f"{int(duration_s // 3600)}:{int((duration_s % 3600) // 60):02d}"
     meta = {
         "Start": start_name,
         "Destination": end_name,
         "Depart (local)": depart_local_str,
         "Route Distance (miles)": round(total_miles, 1),
-        "Route Duration (hr)": round(duration_s / 3600.0, 2),
+        "Route Duration (hr)": duration_hhmm,
         "Signal points": "OSRM steps (maneuvers)",
     }
 
-    return meta, pd.DataFrame(results)
+    # Sort towns by distance from start
+    sorted_rows = sorted(
+        towns_by_label.values(),
+        key=lambda r: r["Approx Route Miles"]
+    )
 
-if __name__ == "__main__":
-    # Change these inputs
-    start = input("Start location (e.g., Boise, ID): ").strip()
-    dest = input("Destination (e.g., Spokane, WA): ").strip()
-    depart = input("Departure local time (YYYY-MM-DD HH:MM): ").strip()
-    meta, df = build_town_weather_table(start, dest, depart)
-
-
-    safe_dest = dest.lower().replace(",", "").replace(" ", "_")
-    out_file = f"route_to_{safe_dest}.xlsx"
-    
-    with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
-        pd.DataFrame([meta]).to_excel(writer, sheet_name="Meta", index=False)
-        df.to_excel(writer, sheet_name="Towns", index=False)
-
-    print(f"Created: {out_file}")
+    return meta, pd.DataFrame(sorted_rows)
